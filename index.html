@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rifa 1–100</title>
+  <style>
+    :root{
+      --bg:#0f172a; /* slate-900 */
+      --panel:#111827ee; /* gray-900 */
+      --muted:#94a3b8; /* slate-400 */
+      --text:#e5e7eb; /* gray-200 */
+      --accent:#06b6d4; /* cyan-500 */
+      --sold:#ef4444;  /* red-500 */
+      --free:#22c55e;  /* green-500 */
+      --warn:#f59e0b;  /* amber-500 */
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu, Cantarell, Noto Sans, sans-serif;
+      color:var(--text); background: radial-gradient(1200px 600px at 10% -10%, #1f2937, transparent), var(--bg);
+      display:flex; flex-direction:column; gap:16px; align-items:center; padding:18px;
+    }
+    .app{width:100%; max-width:980px;}
+    header{display:flex; gap:12px; align-items:center; justify-content:space-between}
+    h1{font-size:clamp(18px,2.5vw,28px); margin:0; letter-spacing:.3px}
+    .badge{display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border-radius:999px; background:var(--panel); border:1px solid #334155; box-shadow:0 0 0 1px rgba(255,255,255,.02) inset}
+    .lock{width:20px; height:20px; display:inline-grid; place-items:center; border-radius:6px}
+    .lock[data-state="locked"]{color:#e11d48}
+    .lock[data-state="unlocked"]{color:#10b981}
+    .row{display:flex; gap:10px; flex-wrap:wrap}
+    .row > *{flex:1}
+    .controls{display:grid; grid-template-columns:1fr auto auto auto; gap:10px}
+    .search{min-width:180px}
+    .btn, button{cursor:pointer; border:1px solid #334155; background:#111827; color:var(--text); padding:10px 14px; border-radius:12px; font-weight:600}
+    .btn:hover{background:#0b1220}
+    .btn[disabled]{opacity:.6; cursor:not-allowed}
+    input, select{border:1px solid #334155; background:#0b1220; color:var(--text); padding:10px 12px; border-radius:12px; outline:none}
+    .grid{margin-top:14px; display:grid; grid-template-columns:repeat(10,1fr); gap:8px}
+    .cell{aspect-ratio:1/1; border:1px solid #334155; border-radius:12px; display:grid; place-items:center; user-select:none; font-weight:700; font-size:clamp(12px,2.2vw,20px); position:relative; transition:transform .08s ease, background .2s}
+    .cell .mini{position:absolute; bottom:6px; right:8px; font-size:10px; color:#9ca3af; opacity:.6}
+    .cell[data-state="free"]{background:linear-gradient(180deg, rgba(34,197,94,.15), transparent);}
+    .cell[data-state="sold"]{background:linear-gradient(180deg, rgba(239,68,68,.18), transparent);}
+    .cell[data-state="sold"]::after{content:"VENDIDO"; position:absolute; inset:auto 8px 8px auto; font-size:10px; background:rgba(239,68,68,.2); border:1px dashed rgba(239,68,68,.6); color:#fecaca; padding:2px 6px; border-radius:6px}
+    .cell[data-owner="1"]{box-shadow:0 0 0 2px rgba(6,182,212,.35) inset}
+    .cell[data-clickable="1"]:hover{transform:translateY(-1px)}
+    .stats{display:flex; gap:10px; flex-wrap:wrap; margin-top:6px}
+    .pill{padding:8px 12px; border-radius:999px; background:#0b1220; border:1px solid #334155; font-weight:700}
+    .pill .dot{display:inline-block; width:10px; height:10px; border-radius:10px; margin-right:6px}
+    .dot.free{background:var(--free)}
+    .dot.sold{background:var(--sold)}
+    details{background:#0b1220; border:1px solid #334155; border-radius:14px; padding:10px 12px}
+    summary{cursor:pointer; font-weight:700}
+    .footer{opacity:.75; font-size:12px; margin-top:8px}
+    .hidden{display:none !important}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Rifa 1–100</h1>
+      <div class="badge" id="ownerBadge" title="Modo dueño">
+        <span class="lock" id="lockIcon" data-state="locked">🔒</span>
+        <span id="ownerText">Solo lectura</span>
+      </div>
+    </header>
+
+    <div class="row controls">
+      <input id="search" class="search" type="number" min="1" max="100" placeholder="Buscar número (1–100)" />
+      <button class="btn" id="findBtn">Ir</button>
+      <button class="btn" id="toggleOwnerBtn">Entrar como dueño</button>
+      <button class="btn" id="exportBtn" title="Descargar estado">Exportar</button>
+    </div>
+
+    <div class="stats" id="stats">
+      <div class="pill"><span class="dot free"></span><span id="freeCount">100</span> libres</div>
+      <div class="pill"><span class="dot sold"></span><span id="soldCount">0</span> vendidos</div>
+      <div class="pill">Total: 100</div>
+    </div>
+
+    <div id="grid" class="grid" aria-live="polite"></div>
+
+    <details id="ownerPanel" class="hidden">
+      <summary>Panel del dueño</summary>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="markSoldBtn">Marcar como vendido</button>
+        <button class="btn" id="markFreeBtn">Marcar como libre</button>
+        <button class="btn" id="clearAllBtn" title="Pone todos libres">Reiniciar</button>
+        <button class="btn" id="importBtn">Importar archivo</button>
+        <input type="file" id="fileInput" accept="application/json" class="hidden" />
+      </div>
+      <p class="footer">Seguridad básica sin servidor: la contraseña está en el archivo. Cámbiala antes de publicar.</p>
+    </details>
+
+    <p class="footer">Consejo: puedes guardar esta página y abrirla en cualquier navegador. El estado se guarda en este dispositivo (localStorage) y también puedes exportarlo/importarlo en JSON.</p>
+  </div>
+
+  <script>
+    // ====== CONFIGURA AQUÍ ======
+    // Cambia esta contraseña ANTES de usar (solo letras y números recomendado).
+    const ALANTADEONEXUS = "rifa-2025"; // <-- cámbiala
+    const STORAGE_KEY = "rifa_1_100_estado_v1";
+    const OWNER_SESSION_KEY = "rifa_owner_session";
+    // ============================
+
+    const gridEl = document.getElementById('grid');
+    const ownerPanel = document.getElementById('ownerPanel');
+    const lockIcon = document.getElementById('lockIcon');
+    const ownerText = document.getElementById('ownerText');
+    const toggleOwnerBtn = document.getElementById('toggleOwnerBtn');
+    const search = document.getElementById('search');
+    const findBtn = document.getElementById('findBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const importBtn = document.getElementById('importBtn');
+    const fileInput = document.getElementById('fileInput');
+    const markSoldBtn = document.getElementById('markSoldBtn');
+    const markFreeBtn = document.getElementById('markFreeBtn');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+    const freeCount = document.getElementById('freeCount');
+    const soldCount = document.getElementById('soldCount');
+
+    // Estado en memoria: Set con números vendidos (1..100)
+    let sold = loadState();
+    let owner = !!sessionStorage.getItem(OWNER_SESSION_KEY);
+
+    function loadState(){
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if(!raw) return new Set();
+        const arr = JSON.parse(raw);
+        if(Array.isArray(arr)) return new Set(arr.filter(n=>Number.isInteger(n) && n>=1 && n<=100));
+      }catch(e){console.warn(e)}
+      return new Set();
+    }
+    function saveState(){
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...sold].sort((a,b)=>a-b)));
+      updateStats();
+    }
+
+    function updateStats(){
+      const s = sold.size; const f = 100 - s;
+      soldCount.textContent = s; freeCount.textContent = f;
+    }
+
+    function buildGrid(){
+      gridEl.innerHTML = '';
+      for(let i=1;i<=100;i++){
+        const cell = document.createElement('button');
+        cell.className = 'cell';
+        cell.dataset.number = i;
+        cell.title = 'Número ' + i;
+        cell.setAttribute('aria-pressed', sold.has(i));
+        cell.dataset.state = sold.has(i) ? 'sold' : 'free';
+        cell.dataset.clickable = owner ? '1' : '0';
+        if(owner) cell.dataset.owner = '1';
+        cell.textContent = i;
+        const mini = document.createElement('span'); mini.className='mini'; mini.textContent = sold.has(i)?'–':'+'; cell.appendChild(mini);
+        cell.addEventListener('click', ()=>{
+          if(!owner) return;
+          toggleOne(i);
+          cell.dataset.state = sold.has(i)?'sold':'free';
+          cell.setAttribute('aria-pressed', sold.has(i));
+          mini.textContent = sold.has(i)?'–':'+';
+        });
+        gridEl.appendChild(cell);
+      }
+      updateStats();
+    }
+
+    function toggleOne(n){
+      if(sold.has(n)) sold.delete(n); else sold.add(n);
+      saveState();
+    }
+
+    function scrollToNumber(n){
+      const target = gridEl.querySelector(`.cell[data-number="${n}"]`);
+      if(target){
+        target.scrollIntoView({behavior:'smooth', block:'center'});
+        target.animate([{outline:'2px solid var(--accent)'},{outline:'0px solid transparent'}], {duration:1200});
+      }
+    }
+
+    function setOwnerMode(isOwner){
+      owner = !!isOwner;
+      sessionStorage.setItem(OWNER_SESSION_KEY, owner ? '1' : '');
+      ownerPanel.classList.toggle('hidden', !owner);
+      lockIcon.dataset.state = owner ? 'unlocked' : 'locked';
+      ownerText.textContent = owner ? 'Dueño: puede editar' : 'Solo lectura';
+      toggleOwnerBtn.textContent = owner ? 'Salir de dueño' : 'Entrar como dueño';
+      // re-construye para activar/desactivar clicks
+      buildGrid();
+    }
+
+    // Eventos
+    findBtn.addEventListener('click', ()=>{
+      const n = parseInt(search.value,10);
+      if(Number.isInteger(n) && n>=1 && n<=100) scrollToNumber(n);
+    });
+    search.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); findBtn.click(); }});
+
+    toggleOwnerBtn.addEventListener('click', ()=>{
+      if(owner){ setOwnerMode(false); return; }
+      const input = prompt('Contraseña de dueño:');
+      if(input === null) return; // cancel
+      if(input === OWNER_PASSWORD){ setOwnerMode(true); }
+      else{
+        alert('Contraseña incorrecta');
+      }
+    });
+
+    exportBtn.addEventListener('click', ()=>{
+      const data = { sold:[...sold].sort((a,b)=>a-b), updatedAt: new Date().toISOString() };
+      const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'rifa_1_100_estado.json'; a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    importBtn.addEventListener('click', ()=> fileInput.click());
+    fileInput.addEventListener('change', (e)=>{
+      const file = e.target.files?.[0]; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const obj = JSON.parse(reader.result);
+          if(!obj || !Array.isArray(obj.sold)) throw new Error('Formato inválido');
+          sold = new Set(obj.sold.filter(n=>Number.isInteger(n) && n>=1 && n<=100));
+          saveState(); buildGrid();
+          alert('Estado importado.');
+        }catch(err){ alert('No se pudo importar: '+ err.message); }
+      };
+      reader.readAsText(file);
+      // limpiar input para permitir reimportar el mismo archivo
+      e.target.value = '';
+    });
+
+    markSoldBtn.addEventListener('click', ()=>{
+      const n = parseInt(prompt('Número a marcar vendido (1–100):')||'',10);
+      if(Number.isInteger(n) && n>=1 && n<=100){ sold.add(n); saveState(); buildGrid(); scrollToNumber(n);} else alert('Número inválido');
+    });
+    markFreeBtn.addEventListener('click', ()=>{
+      const n = parseInt(prompt('Número a marcar libre (1–100):')||'',10);
+      if(Number.isInteger(n) && n>=1 && n<=100){ sold.delete(n); saveState(); buildGrid(); scrollToNumber(n);} else alert('Número inválido');
+    });
+    clearAllBtn.addEventListener('click', ()=>{
+      if(confirm('¿Seguro que quieres reiniciar todos los números a LIBRES?')){ sold = new Set(); saveState(); buildGrid(); }
+    });
+
+    // Inicializa
+    buildGrid();
+    setOwnerMode(owner);
+  </script>
+</body>
+</html>
+
